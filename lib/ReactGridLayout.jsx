@@ -348,60 +348,80 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       const draggingTarget: LayoutItem = layout.find((item) => item.i === i);
       const droppingTarget: LayoutItem = layout.find((item) => item.i === groupingTarget);
 
-      // 일반 -> 일반
-      if (!draggingTarget.isGroup && !droppingTarget.isGroup) {
-        const groupId = `group-${draggingTarget.i}-${droppingTarget.i}`;
+      if (draggingTarget && droppingTarget) {
+        // 일반 -> 일반
+        if (!draggingTarget.isGroup && !droppingTarget.isGroup) {
+          const groupId = `group-${Date.now()}`;
 
-        const newLayout = layout.filter((item) => {
-          return (item.i !== draggingTarget.i) && (item.i !== droppingTarget.i);
-        });
+          // 기존 아이템들을 레이아웃에서 제거
+          const newLayout = layout.filter((item) => {
+            return (item.i !== draggingTarget.i) && (item.i !== droppingTarget.i);
+          });
 
-        const { ...droppingAttr } = droppingTarget
+          // 그룹 생성을 위한 더 나은 알고리즘
+          const groupLayout = this.createOptimalGroupLayout(draggingTarget, droppingTarget);
 
-        const combinedSize = getCombinedSize(draggingTarget, droppingTarget);
+          newLayout.push({
+            i: groupId,
+            x: groupLayout.groupPosition.x,
+            y: groupLayout.groupPosition.y,
+            w: groupLayout.groupSize.w,
+            h: groupLayout.groupSize.h,
+            isGroup: true,
+            children: groupLayout.children
+          });
 
-        newLayout.push({
-          ...droppingAttr,
-          i: groupId,
-          w: combinedSize.w,
-          h: combinedSize.h,
-          isGroup: true,
-          children: [
-            {
+          layout = newLayout;
+        }
+        // 일반 -> 그룹: 드래그된 아이템을 기존 그룹에 추가
+        else if (!draggingTarget.isGroup && droppingTarget.isGroup) {
+          const newLayout = layout.filter((item) => item.i !== draggingTarget.i);
+          const groupIndex = newLayout.findIndex((item) => item.i === droppingTarget.i);
+          
+          if (groupIndex !== -1) {
+            const updatedGroup = { ...newLayout[groupIndex] };
+            updatedGroup.children = [...updatedGroup.children, {
               ...draggingTarget,
               x: 0,
-              y: 0,
-            }, {
-            ...droppingTarget,
-              x: draggingTarget.w,
-              y: 0,
-            }],
-        })
-
-        layout = newLayout;
+              y: updatedGroup.children.length
+            }];
+            
+            // 그룹 크기 재계산
+            const cols = updatedGroup.children.reduce((maxCols, item) => {
+              return Math.max(maxCols, item.x + item.w);
+            }, 1);
+            const maxHeight = updatedGroup.children.reduce((maxHeight, item) => {
+              return Math.max(maxHeight, item.y + item.h);
+            }, 1);
+            
+            updatedGroup.w = Math.max(updatedGroup.w, cols);
+            updatedGroup.h = Math.max(updatedGroup.h, maxHeight);
+            
+            newLayout[groupIndex] = updatedGroup;
+            layout = newLayout;
+          }
+        }
       }
-
-
-      // 일반 -> 그룹
-      // 그룹 -> 그룹
-      // 그룹 -> 일반
     }
 
 
 
-    // Move the element here
-    const isUserAction = true;
-    layout = moveElement(
-      layout,
-      l,
-      x,
-      y,
-      isUserAction,
-      preventCollision,
-      compactType(this.props),
-      cols,
-      allowOverlap
-    );
+    // 그룹화가 일어나지 않았다면 일반적인 드래그 이동 처리
+    if (!isGroupDroppable || groupingTarget === null) {
+      // Move the element here
+      const isUserAction = true;
+      layout = moveElement(
+        layout,
+        l,
+        x,
+        y,
+        isUserAction,
+        preventCollision,
+        compactType(this.props),
+        cols,
+        allowOverlap
+      );
+    }
 
     // Set state
     const newLayout = allowOverlap
@@ -1017,36 +1037,143 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   };
 
   getCleanedKey(key: string) {
-    return String(key).replace(/^\.\$/, '');
+    // React는 key에 다양한 prefix를 붙일 수 있음 (".$", "." 등)
+    // 이런 prefix들을 모두 제거하고 원래 key만 반환
+    return String(key).replace(/^\.(\$)?/, '');
+  }
+
+  /**
+   * 두 아이템으로부터 최적의 그룹 레이아웃을 생성
+   */
+  createOptimalGroupLayout(item1: LayoutItem, item2: LayoutItem) {
+    // 그룹의 최소 위치 계산 (두 아이템 중 더 작은 x, y)
+    const groupX = Math.min(item1.x, item2.x);
+    const groupY = Math.min(item1.y, item2.y);
+
+    // 두 아이템을 효율적으로 배치하는 알고리즘
+    // 가로 배치와 세로 배치 중 더 효율적인 것을 선택
+    const horizontalLayout = this.calculateHorizontalLayout(item1, item2);
+    const verticalLayout = this.calculateVerticalLayout(item1, item2);
+
+    // 면적이 더 작은 레이아웃을 선택
+    const horizontalArea = horizontalLayout.w * horizontalLayout.h;
+    const verticalArea = verticalLayout.w * verticalLayout.h;
+
+    const selectedLayout = horizontalArea <= verticalArea ? horizontalLayout : verticalLayout;
+
+    return {
+      groupPosition: { x: groupX, y: groupY },
+      groupSize: { w: selectedLayout.w, h: selectedLayout.h },
+      children: selectedLayout.children
+    };
+  }
+
+  /**
+   * 두 아이템을 가로로 배치하는 레이아웃 계산
+   */
+  calculateHorizontalLayout(item1: LayoutItem, item2: LayoutItem) {
+    const totalWidth = item1.w + item2.w;
+    const maxHeight = Math.max(item1.h, item2.h);
+
+    return {
+      w: totalWidth,
+      h: maxHeight,
+      children: [
+        {
+          ...item1,
+          x: 0,
+          y: 0
+        },
+        {
+          ...item2,
+          x: item1.w,
+          y: 0
+        }
+      ]
+    };
+  }
+
+  /**
+   * 두 아이템을 세로로 배치하는 레이아웃 계산
+   */
+  calculateVerticalLayout(item1: LayoutItem, item2: LayoutItem) {
+    const maxWidth = Math.max(item1.w, item2.w);
+    const totalHeight = item1.h + item2.h;
+
+    return {
+      w: maxWidth,
+      h: totalHeight,
+      children: [
+        {
+          ...item1,
+          x: 0,
+          y: 0
+        },
+        {
+          ...item2,
+          x: 0,
+          y: item1.h
+        }
+      ]
+    };
   }
 
   processGroupItem(key: string, children: ReactElement<any>[], layout: LayoutChild[]) {
     // 그룹 내부 레이아웃의 최대 너비 계산
     const cols = layout.reduce((maxCols, item) => {
       return Math.max(maxCols, item.x + item.w);
-    }, 1);
+    }, 2);
 
     // 그룹 컨테이너를 위한 child 생성
     const groupChild = (
-      <div key={key} style={{ 
+      <div
+        key={key}
+        style={{
         width: "100%", 
-        height: "100%"
+        height: "100%",
+          overflow: "hidden",
+          border: "2px solid #007bff",
+          borderRadius: "4px",
+        background: "rgba(0, 123, 255, 0.1)"
       }}>
         <ReactGridLayout 
           layout={layout} 
-          cols={cols}
-          rowHeight={30}
-          margin={[5, 5]}
+          cols={cols + 1}
+          width={this.props.width / this.props.cols * cols}
+          rowHeight={this.props.rowHeight || 150}
+          margin={[0, 0]}
+          containerPadding={[0, 0]}
           isDraggable={true}
           isResizable={true}
+          autoSize={true}
+          style={{
+            width: "100%",
+            height: "100%",
+            overflow: "scroll",
+            margin: '0',
+          }}
         >
           {layout.map((item) => {
-            const targetElement = children.find((element) => element.key === item.i);
+            const targetElement = children.find((element) => 
+              this.matchChildWithLayoutItem(element, item.i)
+            );
             return targetElement ? (
-              <div key={item.i}>
+              <div key={item.i} style={{ width: "100%", height: "100%", overflow: "hidden" }}>
                 {targetElement}
               </div>
-            ) : null;
+            ) : (
+              <div key={item.i} style={{ 
+                background: "#f0f0f0", 
+                border: "1px dashed #ccc",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                color: "#666"
+              }}>
+                Missing: {item.i}
+              </div>
+            );
           })}
         </ReactGridLayout>
       </div>
@@ -1084,6 +1211,14 @@ export default class ReactGridLayout extends React.Component<Props, State> {
             const groupChildren = childrenArray.filter(child => {
               return childrenIds.some(childId => this.matchChildWithLayoutItem(child, childId));
             });
+            
+            // 디버깅을 위한 로깅
+            console.log(`그룹 ${layoutItem.i}:`, {
+              childrenIds,
+              groupChildrenCount: groupChildren.length,
+              allChildrenKeys: childrenArray.map(c => c.key)
+            });
+            
             return this.processGroupItem(layoutItem.i, groupChildren, layoutItem.children);
           } else {
             // 일반 아이템의 경우
