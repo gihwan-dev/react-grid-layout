@@ -1,8 +1,19 @@
 // @flow
+import type { ChildrenArray as ReactChildrenArray, Element as ReactElement } from "react";
 import * as React from "react";
 
 import { deepEqual } from "fast-equals";
 import clsx from "clsx";
+// Types
+import type {
+  CompactType,
+  DragOverEvent,
+  DroppingPosition,
+  GridDragEvent,
+  GridResizeEvent,
+  Layout,
+  LayoutItem
+} from "./utils";
 import {
   bottom,
   childrenEqual,
@@ -11,6 +22,7 @@ import {
   compactType,
   fastRGLPropsEqual,
   getAllCollisions,
+  getCombinedSize,
   getLayoutItem,
   moveElement,
   noop,
@@ -18,27 +30,12 @@ import {
   withLayoutItem
 } from "./utils";
 
+import type { PositionParams } from "./calculateUtils";
 import { calcXY } from "./calculateUtils";
 
 import GridItem from "./GridItem";
+import type { DefaultProps, Props } from "./ReactGridLayoutPropTypes";
 import ReactGridLayoutPropTypes from "./ReactGridLayoutPropTypes";
-import type {
-  ChildrenArray as ReactChildrenArray,
-  Element as ReactElement
-} from "react";
-
-// Types
-import type {
-  CompactType,
-  GridResizeEvent,
-  GridDragEvent,
-  DragOverEvent,
-  Layout,
-  DroppingPosition,
-  LayoutItem
-} from "./utils";
-
-import type { PositionParams } from "./calculateUtils";
 
 type State = {
   activeDrag: ?LayoutItem,
@@ -53,10 +50,12 @@ type State = {
   // Mirrored props
   children: ReactChildrenArray<ReactElement<any>>,
   compactType?: CompactType,
-  propsLayout?: Layout
+  propsLayout?: Layout,
+  // Grouping related states
+  groupingTarget: ?string, // 현재 드래그 중인 아이템이 위치한 타겟 아이템 ID
+  groupingTimer: ?TimeoutID, // 1초 타이머 ID
+  isGroupDroppable: boolean // 그룹 드롭 가능 상태
 };
-
-import type { Props, DefaultProps } from "./ReactGridLayoutPropTypes";
 
 // End Types
 
@@ -135,7 +134,10 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     oldResizeItem: null,
     resizing: false,
     droppingDOMNode: null,
-    children: []
+    children: [],
+    groupingTarget: null,
+    groupingTimer: null,
+    isGroupDroppable: false
   };
 
   dragEnterCounter: number = 0;
@@ -203,7 +205,10 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       !fastRGLPropsEqual(this.props, nextProps, deepEqual) ||
       this.state.activeDrag !== nextState.activeDrag ||
       this.state.mounted !== nextState.mounted ||
-      this.state.droppingPosition !== nextState.droppingPosition
+      this.state.droppingPosition !== nextState.droppingPosition ||
+      // 그룹화 관련 상태들 추가
+      this.state.groupingTarget !== nextState.groupingTarget ||
+      this.state.isGroupDroppable !== nextState.isGroupDroppable
     );
   }
 
@@ -262,10 +267,18 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       i: i
     };
 
+    // 그룹화 상태 초기화
+    if (this.state.groupingTimer) {
+      clearTimeout(this.state.groupingTimer);
+    }
+
     this.setState({
       oldDragItem: cloneLayoutItem(l),
       oldLayout: layout,
-      activeDrag: placeholder
+      activeDrag: placeholder,
+      groupingTarget: null,
+      groupingTimer: null,
+      isGroupDroppable: false
     });
 
     return this.props.onDragStart(layout, l, l, null, e, node);
@@ -302,27 +315,9 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     };
 
     // Move the element to the dragged location.
-    const isUserAction = true;
-    layout = moveElement(
-      layout,
-      l,
-      x,
-      y,
-      isUserAction,
-      preventCollision,
-      compactType(this.props),
-      cols,
-      allowOverlap
-    );
 
-    this.props.onDrag(layout, oldDragItem, l, placeholder, e, node);
-
-    this.setState({
-      layout: allowOverlap
-        ? layout
-        : compact(layout, compactType(this.props), cols),
-      activeDrag: placeholder
-    });
+    // 그룹화 타겟 추적 로직
+    this.handleGroupingTarget(i, x, y);
   };
 
   /**
@@ -344,8 +339,38 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     const { oldDragItem } = this.state;
     let { layout } = this.state;
     const { cols, preventCollision, allowOverlap } = this.props;
+    const { isGroupDroppable, groupingTarget } = this.state;
     const l = getLayoutItem(layout, i);
     if (!l) return;
+
+    if (isGroupDroppable && groupingTarget !== undefined) {
+      const draggingTarget: LayoutItem = layout.find((item) => item.i === i);
+      const droppingTarget: LayoutItem = layout.find((item) => item.i === groupingTarget);
+
+      // 일반 -> 일반
+      if (!draggingTarget.isGroup && !droppingTarget.isGroup) {
+        const groupId = `group-${draggingTarget.i}-${droppingTarget.i}`;
+
+        const newLayout = layout.filter((item) => {
+          return (item.i !== draggingTarget.i) && (item.i !== droppingTarget.i);
+        });
+
+        const { ...droppingAttr } = droppingTarget
+
+        const combinedSize = getCombinedSize(draggingTarget, droppingTarget);
+
+        newLayout.push({
+          ...droppingAttr,
+          i: groupId,
+          w: combinedSize.w,
+          h: combinedSize.h,
+          children: [draggingTarget, droppingTarget],
+        })
+      }
+      // 일반 -> 그룹
+      // 그룹 -> 그룹
+      // 그룹 -> 일반
+    }
 
     // Move the element here
     const isUserAction = true;
@@ -361,6 +386,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       allowOverlap
     );
 
+
     // Set state
     const newLayout = allowOverlap
       ? layout
@@ -368,12 +394,21 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
     this.props.onDragStop(newLayout, oldDragItem, l, null, e, node);
 
+    // 그룹화 타이머 정리
+    if (this.state.groupingTimer) {
+      clearTimeout(this.state.groupingTimer);
+    }
+
+
     const { oldLayout } = this.state;
     this.setState({
       activeDrag: null,
       layout: newLayout,
       oldDragItem: null,
-      oldLayout: null
+      oldLayout: null,
+      groupingTarget: null,
+      groupingTimer: null,
+      isGroupDroppable: false
     });
 
     this.onLayoutMaybeChanged(newLayout, oldLayout);
@@ -615,7 +650,8 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       resizeHandles,
       resizeHandle
     } = this.props;
-    const { mounted, droppingPosition } = this.state;
+    const { mounted, droppingPosition, groupingTarget, isGroupDroppable } =
+      this.state;
 
     // Determine user manipulations possible.
     // If an item is static, it can't be manipulated by default.
@@ -632,6 +668,10 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
     // isBounded set on child if set on parent, and child is not explicitly false
     const bounded = draggable && isBounded && l.isBounded !== false;
+
+    // 그룹화 관련 CSS 클래스 결정
+    const isGroupingTarget = groupingTarget === l.i;
+
 
     return (
       <GridItem
@@ -668,8 +708,29 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         droppingPosition={isDroppingItem ? droppingPosition : undefined}
         resizeHandles={resizeHandlesOptions}
         resizeHandle={resizeHandle}
+        style={{
+          position: "relative"
+        }}
       >
-        {child}
+        <div style={{ position: "relative" }}>
+          {isGroupingTarget && isGroupDroppable &&  (
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                backgroundColor: "black",
+                opacity: 0.3,
+                color: "white"
+              }}
+            >
+              그룹화 가능
+            </div>
+          )}
+          {child}
+        </div>
       </GridItem>
     );
   }
@@ -823,6 +884,109 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     this.props.onDrop(layout, item, e);
   };
 
+  /**
+   * 드래그 중인 아이템이 어떤 다른 아이템 위에 있는지 감지하고 그룹화 타겟을 추적
+   */
+  handleGroupingTarget = (draggedItemId: string, x: number, y: number) => {
+    const { layout } = this.state;
+    const draggedItem = getLayoutItem(layout, draggedItemId);
+    if (!draggedItem) return;
+
+    // 현재 드래그된 위치에서 겹치는 다른 아이템 찾기
+    const targetItem = this.findItemAtPosition(draggedItem, x, y);
+    const newTargetId = targetItem ? targetItem.i : null;
+    const currentTargetId = this.state.groupingTarget;
+
+    // 타겟이 변경되었거나 없어진 경우
+    if (newTargetId !== currentTargetId) {
+      // 기존 타이머 제거
+      if (this.state.groupingTimer) {
+        clearTimeout(this.state.groupingTimer);
+      }
+
+      if (newTargetId === null) {
+        // 타겟이 없는 경우: 모든 그룹화 상태 초기화
+        this.setState({
+          groupingTarget: null,
+          groupingTimer: null,
+          isGroupDroppable: false
+        });
+        console.log("🔄 그룹화 타겟 해제");
+      } else {
+        // 새로운 타겟인 경우: 1초 타이머 시작
+        const newTimer = setTimeout(() => {
+          this.setState({
+            isGroupDroppable: true
+          });
+          console.log(
+            `✅ 그룹화 준비 완료! [${draggedItemId}] → [${newTargetId}]`
+          );
+        }, 1000);
+
+        this.setState({
+          groupingTarget: newTargetId,
+          groupingTimer: newTimer,
+          isGroupDroppable: false
+        });
+
+        console.log(
+          `🎯 그룹화 타겟 감지: [${draggedItemId}] → [${newTargetId}] (1초 대기 중...)`
+        );
+      }
+    }
+    // 같은 타겟인 경우에는 아무것도 하지 않음 (타이머 유지)
+  };
+
+  /**
+   * 주어진 위치에서 겹치는 아이템을 찾음 (드래그된 아이템 제외)
+   */
+  findItemAtPosition = (draggedItem: LayoutItem, x: number, y: number) => {
+    const { layout } = this.state;
+
+    // 드래그된 아이템의 새로운 위치를 임시로 설정
+    const tempDraggedItem = {
+      ...draggedItem,
+      x: x,
+      y: y
+    };
+
+    // 다른 모든 아이템과 충돌 검사
+    for (const item of layout) {
+      if (item.i === draggedItem.i) continue; // 자기 자신 제외
+      if (item.static) continue; // 정적 아이템 제외
+
+      // 충돌 검사
+      if (this.isItemsOverlapping(tempDraggedItem, item)) {
+        return item;
+      }
+    }
+
+    return null;
+  };
+
+  /**
+   * 두 아이템이 겹치는지 확인
+   */
+  isItemsOverlapping = (item1: LayoutItem, item2: LayoutItem) => {
+    return !(
+      (
+        item1.x + item1.w <= item2.x || // item1이 item2 왼쪽에 있음
+        item2.x + item2.w <= item1.x || // item2가 item1 왼쪽에 있음
+        item1.y + item1.h <= item2.y || // item1이 item2 위에 있음
+        item2.y + item2.h <= item1.y
+      ) // item2가 item1 위에 있음
+    );
+  };
+
+  /**
+   * 컴포넌트 언마운트 시 타이머 정리
+   */
+  componentWillUnmount() {
+    if (this.state.groupingTimer) {
+      clearTimeout(this.state.groupingTimer);
+    }
+  }
+
   render(): React.Element<"div"> {
     const { className, style, isDroppable, innerRef } = this.props;
 
@@ -831,6 +995,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       height: this.containerHeight(),
       ...style
     };
+
 
     return (
       <div
@@ -842,8 +1007,15 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         onDragEnter={isDroppable ? this.onDragEnter : noop}
         onDragOver={isDroppable ? this.onDragOver : noop}
       >
-        {React.Children.map(this.props.children, child =>
-          this.processGridItem(child)
+        {React.Children.map(this.props.children, child => {
+          const key = child.key;
+
+          const isGroup = this.state.layout.find((l) => l.i === key)?.isGroup;
+
+            if (isGroup) return null;
+
+            return this.processGridItem(child);
+          }
         )}
         {isDroppable &&
           this.state.droppingDOMNode &&
