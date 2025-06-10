@@ -12,7 +12,8 @@ import type {
   GridDragEvent,
   GridResizeEvent,
   Layout,
-  LayoutItem
+  LayoutItem,
+  LayoutChild,
 } from "./utils";
 import {
   bottom,
@@ -364,13 +365,29 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           i: groupId,
           w: combinedSize.w,
           h: combinedSize.h,
-          children: [draggingTarget, droppingTarget],
+          isGroup: true,
+          children: [
+            {
+              ...draggingTarget,
+              x: 0,
+              y: 0,
+            }, {
+            ...droppingTarget,
+              x: draggingTarget.w,
+              y: 0,
+            }],
         })
+
+        layout = newLayout;
       }
+
+
       // 일반 -> 그룹
       // 그룹 -> 그룹
       // 그룹 -> 일반
     }
+
+
 
     // Move the element here
     const isUserAction = true;
@@ -385,7 +402,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       cols,
       allowOverlap
     );
-
 
     // Set state
     const newLayout = allowOverlap
@@ -631,7 +647,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     isDroppingItem?: boolean
   ): ?ReactElement<any> {
     if (!child || !child.key) return;
-    const l = getLayoutItem(this.state.layout, String(child.key));
+    const l = getLayoutItem(this.state.layout, this.getCleanedKey(String(child.key)));
     if (!l) return null;
     const {
       width,
@@ -987,6 +1003,58 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     }
   }
 
+  /**
+   * React child key와 layout item id를 매칭하는 헬퍼 함수
+   * React는 key에 ".$" prefix를 붙이므로 이를 고려한 매칭
+   */
+  matchChildWithLayoutItem = (child: ReactElement<any>, layoutItemId: string): boolean => {
+    const childKey = child.key;
+    if (!childKey) return false;
+    
+    // React key prefix ".$"를 제거하고 비교
+    const cleanKey = this.getCleanedKey(childKey);
+    return cleanKey === layoutItemId;
+  };
+
+  getCleanedKey(key: string) {
+    return String(key).replace(/^\.\$/, '');
+  }
+
+  processGroupItem(key: string, children: ReactElement<any>[], layout: LayoutChild[]) {
+    // 그룹 내부 레이아웃의 최대 너비 계산
+    const cols = layout.reduce((maxCols, item) => {
+      return Math.max(maxCols, item.x + item.w);
+    }, 1);
+
+    // 그룹 컨테이너를 위한 child 생성
+    const groupChild = (
+      <div key={key} style={{ 
+        width: "100%", 
+        height: "100%"
+      }}>
+        <ReactGridLayout 
+          layout={layout} 
+          cols={cols}
+          rowHeight={30}
+          margin={[5, 5]}
+          isDraggable={true}
+          isResizable={true}
+        >
+          {layout.map((item) => {
+            const targetElement = children.find((element) => element.key === item.i);
+            return targetElement ? (
+              <div key={item.i}>
+                {targetElement}
+              </div>
+            ) : null;
+          })}
+        </ReactGridLayout>
+      </div>
+    );
+
+    return this.processGridItem(groupChild);
+  }
+
   render(): React.Element<"div"> {
     const { className, style, isDroppable, innerRef } = this.props;
 
@@ -1007,16 +1075,25 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         onDragEnter={isDroppable ? this.onDragEnter : noop}
         onDragOver={isDroppable ? this.onDragOver : noop}
       >
-        {React.Children.map(this.props.children, child => {
-          const key = child.key;
+        {this.state.layout.map(layoutItem => {
+          const childrenArray = React.Children.toArray(this.props.children);
+          
+          if (layoutItem.isGroup) {
+            // 그룹의 경우
+            const childrenIds = layoutItem.children.map(child => child.i);
+            const groupChildren = childrenArray.filter(child => {
+              return childrenIds.some(childId => this.matchChildWithLayoutItem(child, childId));
+            });
+            return this.processGroupItem(layoutItem.i, groupChildren, layoutItem.children);
+          } else {
+            // 일반 아이템의 경우
+            const targetChild = childrenArray.find(child => {
+              return this.matchChildWithLayoutItem(child, layoutItem.i);
+            });
 
-          const isGroup = this.state.layout.find((l) => l.i === key)?.isGroup;
-
-            if (isGroup) return null;
-
-            return this.processGridItem(child);
+            return targetChild ? this.processGridItem(targetChild) : null;
           }
-        )}
+        })}
         {isDroppable &&
           this.state.droppingDOMNode &&
           this.processGridItem(this.state.droppingDOMNode, true)}
