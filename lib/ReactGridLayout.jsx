@@ -1128,30 +1128,17 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     const groupChild = (
       <div
         key={key}
-        style={{
-        width: "100%", 
-        height: "100%",
-          overflow: "hidden",
-          border: "2px solid #007bff",
-          borderRadius: "4px",
-        background: "rgba(0, 123, 255, 0.1)"
-      }}>
+       >
         <ReactGridLayout 
           layout={layout} 
           cols={cols + 1}
           width={this.props.width / this.props.cols * cols}
           rowHeight={this.props.rowHeight || 150}
           margin={[0, 0]}
-          containerPadding={[0, 0]}
+          containerPadding={[10, 10]}
           isDraggable={true}
           isResizable={true}
           autoSize={true}
-          style={{
-            width: "100%",
-            height: "100%",
-            overflow: "hidden",
-            margin: '0',
-          }}
         >
           {layout.map((item) => {
             const targetElement = children.find((element) => 
