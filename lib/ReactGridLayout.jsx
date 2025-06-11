@@ -1149,7 +1149,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           style={{
             width: "100%",
             height: "100%",
-            overflow: "scroll",
+            overflow: "hidden",
             margin: '0',
           }}
         >
