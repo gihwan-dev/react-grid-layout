@@ -32,9 +32,12 @@ import {
   synchronizeLayoutWithChildren,
   withLayoutItem
 } from "./utils";
-
 import type { PositionParams } from "./calculateUtils";
-import { calcGridItemPosition, calcXY } from "./calculateUtils";
+import {
+  calcGridColWidth,
+  calcGridItemPosition,
+  calcXY
+} from "./calculateUtils";
 
 import GridItem from "./GridItem";
 import type { DefaultProps, Props } from "./ReactGridLayoutPropTypes";
@@ -1271,8 +1274,22 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       return Math.max(maxCols, item.x + item.w);
     }, 1);
 
-    // 그룹 내부 그리드의 너비를 실제 필요한 만큼 계산
-    const groupWidth = this.props.width * (groupCols / this.props.cols);
+    // 부모 그리드 아이템이 실제로 차지하는 픽셀 너비를 계산
+    // 이는 그룹 컨테이너가 100%로 차지하는 실제 너비입니다
+    const parentColWidth = calcGridColWidth({
+      margin: this.props.margin,
+      containerPadding: this.props.containerPadding || this.props.margin,
+      containerWidth: this.props.width,
+      cols: this.props.cols
+    });
+
+    // 그룹이 차지하는 부모 그리드의 cols 수를 계산
+    const parentGroupCols = Math.ceil(groupCols);
+
+    // 그룹 컨테이너의 실제 픽셀 너비 (margin 제외)
+    const groupContainerWidth =
+      parentColWidth * parentGroupCols +
+      this.props.margin[0] * (parentGroupCols - 1);
 
     // 그룹 컨테이너를 위한 child 생성
     const groupChild = (
@@ -1282,18 +1299,16 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         style={{
           width: "100%",
           height: "100%",
-          overflow: "auto"
+          overflowX: "hidden",
+          overflowY: "overlay"
         }}
       >
         <ReactGridLayout
-          style={{
-            margin: 0
-          }}
           layout={layout}
           cols={groupCols}
-          width={groupWidth}
+          width={groupContainerWidth}
           rowHeight={this.props.rowHeight || 150}
-          margin={[0, 0]}
+          margin={this.props.margin}
           containerPadding={[0, 0]}
           isDraggable={true}
           isResizable={true}
