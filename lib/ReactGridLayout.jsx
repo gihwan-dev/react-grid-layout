@@ -416,7 +416,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         y,
         isUserAction,
         preventCollision,
-        compactType(this.props) ?? "horizontal",
+        compactType(this.props),
         cols,
         allowOverlap
       );
@@ -425,7 +425,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     // Set state
     const newLayout = allowOverlap
       ? layout
-      : compact(layout, compactType(this.props) ?? "horizontal", cols);
+      : compact(layout, compactType(this.props), cols);
 
     this.props.onDragStop(newLayout, oldDragItem, l, null, e, node);
 
