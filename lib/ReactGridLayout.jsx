@@ -1,5 +1,8 @@
 // @flow
-import type { ChildrenArray as ReactChildrenArray, Element as ReactElement } from "react";
+import type {
+  ChildrenArray as ReactChildrenArray,
+  Element as ReactElement
+} from "react";
 import * as React from "react";
 
 import { deepEqual } from "fast-equals";
@@ -12,8 +15,8 @@ import type {
   GridDragEvent,
   GridResizeEvent,
   Layout,
-  LayoutItem,
   LayoutChild,
+  LayoutItem
 } from "./utils";
 import {
   bottom,
@@ -23,7 +26,6 @@ import {
   compactType,
   fastRGLPropsEqual,
   getAllCollisions,
-  getCombinedSize,
   getLayoutItem,
   moveElement,
   noop,
@@ -32,7 +34,7 @@ import {
 } from "./utils";
 
 import type { PositionParams } from "./calculateUtils";
-import { calcXY, calcGridItemPosition } from "./calculateUtils";
+import { calcGridItemPosition, calcXY } from "./calculateUtils";
 
 import GridItem from "./GridItem";
 import type { DefaultProps, Props } from "./ReactGridLayoutPropTypes";
@@ -143,13 +145,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
   dragEnterCounter: number = 0;
 
-  componentDidMount() {
-    this.setState({ mounted: true });
-    // Possibly call back with layout on mount. This should be done after correcting the layout width
-    // to ensure we don't rerender with the wrong width.
-    this.onLayoutMaybeChanged(this.state.layout, this.props.layout);
-  }
-
   static getDerivedStateFromProps(
     nextProps: Props,
     prevState: State
@@ -195,6 +190,13 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     }
 
     return null;
+  }
+
+  componentDidMount() {
+    this.setState({ mounted: true });
+    // Possibly call back with layout on mount. This should be done after correcting the layout width
+    // to ensure we don't rerender with the wrong width.
+    this.onLayoutMaybeChanged(this.state.layout, this.props.layout);
   }
 
   shouldComponentUpdate(nextProps: Props, nextState: State): boolean {
@@ -299,7 +301,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     y,
     { e, node }
   ) => {
-    let { layout } = this.state;
+    const { layout } = this.state;
     const l = getLayoutItem(layout, i);
     if (!l) return;
 
@@ -333,77 +335,14 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     if (!l) return;
 
     if (isGroupDroppable && groupingTarget !== null) {
-      const draggingTarget: LayoutItem = layout.find((item) => item.i === i);
-      const droppingTarget: LayoutItem = layout.find((item) => item.i === groupingTarget);
-
-      if (draggingTarget && droppingTarget) {
-        // 일반 -> 일반
-        if (!draggingTarget.isGroup && !droppingTarget.isGroup) {
-          const groupId = `group-${Date.now()}`;
-
-          // 기존 아이템들을 레이아웃에서 제거
-          let newLayout = layout.filter((item) => {
-            return (item.i !== draggingTarget.i) && (item.i !== droppingTarget.i);
-          });
-
-          // 그룹 생성을 위한 더 나은 알고리즘
-          const groupLayout = this.createOptimalGroupLayout(draggingTarget, droppingTarget);
-
-          // 그룹 아이템 생성
-          const groupItem = {
-            i: groupId,
-            x: groupLayout.groupPosition.x,
-            y: groupLayout.groupPosition.y,
-            w: groupLayout.groupSize.w,
-            h: groupLayout.groupSize.h,
-            isGroup: true,
-            children: groupLayout.children
-          };
-
-          // 그룹을 레이아웃에 추가
-          newLayout.push(groupItem);
-
-
-
-            newLayout = moveElement(
-              newLayout,
-              groupLayout,
-              groupLayout.x,  // x는 변경하지 않음
-              groupLayout.y,       // 그룹 아래로 이동
-              true,       // isUserAction
-              false,      // preventCollision
-              "horizontal",
-              cols,
-              allowOverlap,
-            );
-
-          layout = newLayout;
-        }
-        // 일반 -> 그룹: 드래그된 아이템을 기존 그룹에 추가
-        else if (!draggingTarget.isGroup && droppingTarget.isGroup) {
-          const newLayout = layout.filter((item) => item.i !== draggingTarget.i);
-          const groupIndex = newLayout.findIndex((item) => item.i === droppingTarget.i);
-          
-          if (groupIndex !== -1) {
-            const updatedGroup = { ...newLayout[groupIndex] };
-            
-            // 기존 그룹 children에 새로운 위젯 추가하여 최적 레이아웃 재계산
-            const allWidgets = [...updatedGroup.children, draggingTarget];
-            const expandedLayout = this.calculateExpandedGroupLayout(allWidgets, updatedGroup);
-            
-            // 그룹 업데이트
-            updatedGroup.children = expandedLayout.children;
-            updatedGroup.w = expandedLayout.w;
-            updatedGroup.h = expandedLayout.h;
-            
-            newLayout[groupIndex] = updatedGroup;
-            layout = newLayout;
-          }
-        }
-      }
+      layout = this.performGrouping(
+        layout,
+        i,
+        groupingTarget,
+        cols,
+        allowOverlap
+      );
     }
-
-
 
     // 그룹화가 일어나지 않았다면 일반적인 드래그 이동 처리
     if (!isGroupDroppable || groupingTarget === null) {
@@ -433,7 +372,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     if (this.state.groupingTimer) {
       clearTimeout(this.state.groupingTimer);
     }
-
 
     const { oldLayout } = this.state;
     this.setState({
@@ -666,7 +604,10 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     isDroppingItem?: boolean
   ): ?ReactElement<any> {
     if (!child || !child.key) return;
-    const l = getLayoutItem(this.state.layout, this.getCleanedKey(String(child.key)));
+    const l = getLayoutItem(
+      this.state.layout,
+      this.getCleanedKey(String(child.key))
+    );
     if (!l) return null;
     const {
       width,
@@ -707,9 +648,9 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     // 그룹화 관련 CSS 클래스 결정
     const isGroupingTarget = groupingTarget === l.i;
 
-
     return (
       <GridItem
+        key={child.key}
         containerWidth={width}
         cols={cols}
         margin={margin}
@@ -748,7 +689,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         }}
       >
         <div style={{ position: "relative" }}>
-          {isGroupingTarget && isGroupDroppable &&  (
+          {isGroupingTarget && isGroupDroppable && (
             <div
               style={{
                 position: "absolute",
@@ -922,17 +863,25 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   /**
    * 드래그 중인 아이템이 어떤 다른 아이템 위에 있는지 감지하고 그룹화 타겟을 추적
    */
-  handleGroupingTarget = (draggedItemId: string, mouseEvent: MouseEvent, node: HTMLElement) => {
+  handleGroupingTarget = (
+    draggedItemId: string,
+    mouseEvent: MouseEvent,
+    node: HTMLElement
+  ) => {
     const { layout } = this.state;
     const draggedItem = getLayoutItem(layout, draggedItemId);
     if (!draggedItem) return;
 
     // 마우스 포인터 위치에서 겹치는 다른 아이템 찾기
-    const targetItem = this.findItemAtMousePosition(mouseEvent, draggedItem, node);
+    const targetItem = this.findItemAtMousePosition(
+      mouseEvent,
+      draggedItem,
+      node
+    );
     const newTargetId = targetItem ? targetItem.i : null;
     const currentTargetId = this.state.groupingTarget;
 
-    // 타겟이 변경되었거나 없어진 경우
+    // 타겟이 변경되었거나 없어진 경우만 처리
     if (newTargetId !== currentTargetId) {
       // 기존 타이머 제거
       if (this.state.groupingTimer) {
@@ -940,22 +889,21 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       }
 
       if (newTargetId === null) {
-        // 타겟이 없는 경우: 모든 그룹화 상태 초기화
+        // 타겟이 없는 경우: 한 번에 모든 상태 초기화
         this.setState({
           groupingTarget: null,
           groupingTimer: null,
           isGroupDroppable: false
         });
-        console.log("🔄 그룹화 타겟 해제");
       } else {
-        // 새로운 타겟인 경우: 1초 타이머 시작
+        // 새로운 타겟인 경우: 타이머 설정과 함께 상태 업데이트
         const newTimer = setTimeout(() => {
-          this.setState({
-            isGroupDroppable: true
-          });
-          console.log(
-            `✅ 그룹화 준비 완료! [${draggedItemId}] → [${newTargetId}]`
-          );
+          // 컴포넌트가 언마운트되었거나 타겟이 변경된 경우 무시
+          if (this.state.groupingTarget === newTargetId) {
+            this.setState({
+              isGroupDroppable: true
+            });
+          }
         }, 1000);
 
         this.setState({
@@ -963,13 +911,8 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           groupingTimer: newTimer,
           isGroupDroppable: false
         });
-
-        console.log(
-          `🎯 그룹화 타겟 감지: [${draggedItemId}] → [${newTargetId}] (1초 대기 중...)`
-        );
       }
     }
-    // 같은 타겟인 경우에는 아무것도 하지 않음 (타이머 유지)
   };
 
   /**
@@ -1002,19 +945,24 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   /**
    * 마우스 포인터 위치를 기반으로 해당 위치의 아이템을 찾음 (하이브리드 접근법)
    */
-  findItemAtMousePosition = (mouseEvent: MouseEvent, draggedItem: LayoutItem, node: HTMLElement) => {
+  findItemAtMousePosition = (
+    mouseEvent: MouseEvent,
+    draggedItem: LayoutItem,
+    node: HTMLElement
+  ) => {
     const { layout } = this.state;
-    
+
     // 그리드 컨테이너 찾기 (.react-grid-layout 클래스를 가진 요소)
-    const gridContainer = node.closest('.react-grid-layout');
+    const gridContainer = node.closest(".react-grid-layout");
     if (!gridContainer) return null;
-    
+
     const gridRect = gridContainer.getBoundingClientRect();
     const mouseX = mouseEvent.clientX - gridRect.left;
     const mouseY = mouseEvent.clientY - gridRect.top;
-    
+
     // 1단계: 마우스 위치를 그리드 좌표로 변환하여 대략적인 후보 찾기
-    const { cols, margin, maxRows, rowHeight, width, containerPadding } = this.props;
+    const { cols, margin, maxRows, rowHeight, width, containerPadding } =
+      this.props;
     const positionParams: PositionParams = {
       cols,
       margin,
@@ -1023,31 +971,27 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       containerWidth: width,
       containerPadding: containerPadding || margin
     };
-    
-    const gridPos = calcXY(
-      positionParams,
-      mouseY,
-      mouseX,
-      1,
-      1
-    );
-    
+
+    const gridPos = calcXY(positionParams, mouseY, mouseX, 1, 1);
+
     const candidates = [];
     for (const item of layout) {
       if (item.i === draggedItem.i) continue; // 드래그 중인 아이템 제외
       if (item.static) continue; // 정적 아이템 제외
-      
+
       // 그리드 좌표 기반 충돌 확인 (여유 마진 포함)
-      if (!(
-        gridPos.x > item.x + item.w ||
-        item.x > gridPos.x + 1 ||
-        gridPos.y > item.y + item.h ||
-        item.y > gridPos.y + 1
-      )) {
+      if (
+        !(
+          gridPos.x > item.x + item.w ||
+          item.x > gridPos.x + 1 ||
+          gridPos.y > item.y + item.h ||
+          item.y > gridPos.y + 1
+        )
+      ) {
         candidates.push(item);
       }
     }
-    
+
     // 2단계: 픽셀 단위로 정확한 충돌 감지
     for (const candidate of candidates) {
       const pixelPos = calcGridItemPosition(
@@ -1058,7 +1002,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         candidate.h,
         this.state
       );
-      
+
       // 마우스가 아이템의 픽셀 경계 내에 있는지 확인
       if (
         mouseX >= pixelPos.left &&
@@ -1069,7 +1013,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         return candidate;
       }
     }
-    
+
     return null;
   };
 
@@ -1097,13 +1041,108 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   }
 
   /**
+   * 그룹화 로직을 한 번에 처리하는 최적화된 메서드
+   */
+  performGrouping = (
+    layout: Layout,
+    draggedItemId: string,
+    targetId: string,
+    _cols: number,
+    _allowOverlap: boolean
+  ): Layout => {
+    const draggingTarget = layout.find(item => item.i === draggedItemId);
+    const droppingTarget = layout.find(item => item.i === targetId);
+
+    if (!draggingTarget || !droppingTarget) {
+      return layout;
+    }
+
+    // 일반 -> 일반: 새 그룹 생성
+    if (!draggingTarget.isGroup && !droppingTarget.isGroup) {
+      return this.createNewGroup(layout, draggingTarget, droppingTarget);
+    }
+
+    // 일반 -> 그룹: 기존 그룹에 추가
+    if (!draggingTarget.isGroup && droppingTarget.isGroup) {
+      return this.addToExistingGroup(layout, draggingTarget, droppingTarget);
+    }
+
+    return layout;
+  };
+
+  /**
+   * 새로운 그룹 생성 (최적화된 버전)
+   */
+  createNewGroup = (
+    layout: Layout,
+    draggingItem: LayoutItem,
+    targetItem: LayoutItem
+  ): Layout => {
+    const groupId = `group-${Date.now()}`;
+
+    // 기존 아이템들 제거
+    const newLayout = layout.filter(
+      item => item.i !== draggingItem.i && item.i !== targetItem.i
+    );
+
+    // 그룹 레이아웃 계산
+    const groupLayout = this.createOptimalGroupLayout(draggingItem, targetItem);
+
+    // 그룹 아이템 생성하고 바로 추가
+    newLayout.push({
+      i: groupId,
+      x: groupLayout.groupPosition.x,
+      y: groupLayout.groupPosition.y,
+      w: groupLayout.groupSize.w,
+      h: groupLayout.groupSize.h,
+      isGroup: true,
+      children: groupLayout.children
+    });
+
+    return newLayout;
+  };
+
+  /**
+   * 기존 그룹에 아이템 추가 (최적화된 버전)
+   */
+  addToExistingGroup = (
+    layout: Layout,
+    draggingItem: LayoutItem,
+    targetGroup: LayoutItem
+  ): Layout => {
+    const newLayout = layout.filter(item => item.i !== draggingItem.i);
+    const groupIndex = newLayout.findIndex(item => item.i === targetGroup.i);
+
+    if (groupIndex === -1) return layout;
+
+    // 그룹 업데이트 (불변성 유지)
+    const allWidgets = [...targetGroup.children, draggingItem];
+    const expandedLayout = this.calculateExpandedGroupLayout(
+      allWidgets,
+      targetGroup
+    );
+
+    newLayout[groupIndex] = {
+      ...targetGroup,
+      children: expandedLayout.children,
+      w: expandedLayout.w,
+      h: expandedLayout.h
+    };
+
+    return newLayout;
+  };
+
+  /**
    * React child key와 layout item id를 매칭하는 헬퍼 함수
    * React는 key에 ".$" prefix를 붙이므로 이를 고려한 매칭
    */
-  matchChildWithLayoutItem = (child: ReactElement<any>, layoutItemId: string): boolean => {
+  matchChildWithLayoutItem = (
+    child: ReactElement<any>,
+    layoutItemId: string
+  ): boolean => {
     const childKey = child.key;
     if (!childKey) return false;
-    
+
     // React key prefix ".$"를 제거하고 비교
     const cleanKey = this.getCleanedKey(childKey);
     return cleanKey === layoutItemId;
@@ -1112,7 +1151,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   getCleanedKey(key: string) {
     // React는 key에 다양한 prefix를 붙일 수 있음 (".$", "." 등)
     // 이런 prefix들을 모두 제거하고 원래 key만 반환
-    return String(key).replace(/^\.(\$)?/, '');
+    return String(key).replace(/^\.(\$)?/, "");
   }
 
   /**
@@ -1126,12 +1165,20 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
     // 두 아이템을 효율적으로 배치하는 알고리즘
     // 가로 배치를 우선으로 시도 (동일한 열에 배치하기 위해)
-    const horizontalLayout = this.calculateHorizontalLayout(draggingItem, targetItem);
-    const verticalLayout = this.calculateVerticalLayout(draggingItem, targetItem);
+    const horizontalLayout = this.calculateHorizontalLayout(
+      draggingItem,
+      targetItem
+    );
+    const verticalLayout = this.calculateVerticalLayout(
+      draggingItem,
+      targetItem
+    );
 
     // 가로 배치가 그리드 너비를 넘지 않으면 가로 배치 우선
     const horizontalFitsInGrid = groupX + horizontalLayout.w <= this.props.cols;
-    const selectedLayout = horizontalFitsInGrid ? horizontalLayout : verticalLayout;
+    const selectedLayout = horizontalFitsInGrid
+      ? horizontalLayout
+      : verticalLayout;
 
     return {
       groupPosition: { x: groupX, y: groupY },
@@ -1194,43 +1241,46 @@ export default class ReactGridLayout extends React.Component<Props, State> {
    * 기존 그룹에 새로운 위젯을 추가할 때 확장된 그룹 레이아웃을 계산
    * 가로 배치를 우선으로 하되, 그리드 너비를 초과하면 다음 줄로 배치
    */
-  calculateExpandedGroupLayout(allWidgets: LayoutItem[], existingGroup: LayoutItem) {
+  calculateExpandedGroupLayout(
+    allWidgets: LayoutItem[],
+    existingGroup: LayoutItem
+  ) {
     const maxCols = this.props.cols;
     const groupStartX = existingGroup.x;
-    
+
     // 위젯들을 가로 우선으로 배치
     let currentX = 0;
     let currentY = 0;
     let maxWidth = 0;
     let maxHeight = 0;
-    
-    const arrangedChildren = allWidgets.map((widget) => {
+
+    const arrangedChildren = allWidgets.map(widget => {
       // 현재 위젯이 현재 줄에 들어갈 수 있는지 확인
       // 그룹의 시작 위치 + 현재 X + 위젯 너비가 전체 컬럼을 넘지 않아야 함
-      const wouldFitInCurrentRow = (groupStartX + currentX + widget.w) <= maxCols;
-      
+      const wouldFitInCurrentRow = groupStartX + currentX + widget.w <= maxCols;
+
       if (!wouldFitInCurrentRow && currentX > 0) {
         // 다음 줄로 이동
         currentX = 0;
         currentY += 2; // 일반적인 위젯 높이를 2로 가정 (또는 이전 줄의 최대 높이 사용)
       }
-      
+
       const arrangedWidget = {
         ...widget,
         x: currentX,
         y: currentY
       };
-      
+
       // 다음 위젯을 위해 X 위치 업데이트
       currentX += widget.w;
-      
+
       // 전체 그룹 크기 추적
       maxWidth = Math.max(maxWidth, currentX);
       maxHeight = Math.max(maxHeight, currentY + widget.h);
-      
+
       return arrangedWidget;
     });
-    
+
     return {
       w: maxWidth,
       h: maxHeight,
@@ -1238,12 +1288,16 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     };
   }
 
-  processGroupItem(key: string, children: ReactElement<any>[], layout: LayoutChild[]) {
+  processGroupItem(
+    key: string,
+    children: ReactElement<any>[],
+    layout: LayoutChild[]
+  ) {
     // 그룹 내부 레이아웃의 최대 너비 계산 (두 위젯이 나란히 배치될 수 있도록)
     const groupCols = layout.reduce((maxCols, item) => {
       return Math.max(maxCols, item.x + item.w);
     }, 1);
-    
+
     // 그룹 내부 그리드의 너비를 실제 필요한 만큼 계산
     const groupWidth = this.props.width * (groupCols / this.props.cols);
 
@@ -1255,14 +1309,14 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         style={{
           width: "100%",
           height: "100%",
-          overflow: "auto",
+          overflow: "auto"
         }}
-       >
+      >
         <ReactGridLayout
           style={{
-            margin: 0,
+            margin: 0
           }}
-          layout={layout} 
+          layout={layout}
           cols={groupCols}
           width={groupWidth}
           rowHeight={this.props.rowHeight || 150}
@@ -1272,23 +1326,29 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           isResizable={true}
           autoSize={true}
         >
-          {layout.map((item) => {
-            const targetElement = children.find((element) => 
+          {layout.map(item => {
+            const targetElement = children.find(element =>
               this.matchChildWithLayoutItem(element, item.i)
             );
             return targetElement ? (
-              <div key={item.i} style={{ width: "100%", height: "100%", overflow: "hidden" }}>
+              <div
+                key={item.i}
+                style={{ width: "100%", height: "100%", overflow: "hidden" }}
+              >
                 {targetElement}
               </div>
             ) : (
-              <div key={item.i} style={{ 
-                background: "#f0f0f0", 
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "12px",
-                color: "#666"
-              }}>
+              <div
+                key={item.i}
+                style={{
+                  background: "#f0f0f0",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  color: "#666"
+                }}
+              >
                 Missing: {item.i}
               </div>
             );
@@ -1309,7 +1369,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       ...style
     };
 
-
     return (
       <div
         ref={innerRef}
@@ -1322,16 +1381,21 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       >
         {this.state.layout.map(layoutItem => {
           const childrenArray = React.Children.toArray(this.props.children);
-          
+
           if (layoutItem.isGroup) {
             // 그룹의 경우
             const childrenIds = layoutItem.children.map(child => child.i);
             const groupChildren = childrenArray.filter(child => {
-              return childrenIds.some(childId => this.matchChildWithLayoutItem(child, childId));
+              return childrenIds.some(childId =>
+                this.matchChildWithLayoutItem(child, childId)
+              );
             });
-            
-            
-            return this.processGroupItem(layoutItem.i, groupChildren, layoutItem.children);
+
+            return this.processGroupItem(
+              layoutItem.i,
+              groupChildren,
+              layoutItem.children
+            );
           } else {
             // 일반 아이템의 경우
             const targetChild = childrenArray.find(child => {
