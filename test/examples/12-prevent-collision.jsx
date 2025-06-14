@@ -12,9 +12,9 @@ export default class NoCollisionLayout extends React.PureComponent {
     rowHeight: 30,
     onLayoutChange: function() {},
     // This turns off compaction so you can place items wherever.
-    verticalCompact: false,
+    verticalCompact: true,
     // This turns off rearrangement so items will not be pushed arround.
-    preventCollision: true
+    preventCollision: false,
   };
 
   constructor(props) {

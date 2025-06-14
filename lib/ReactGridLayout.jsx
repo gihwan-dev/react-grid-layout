@@ -299,23 +299,9 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     y,
     { e, node }
   ) => {
-    const { oldDragItem } = this.state;
     let { layout } = this.state;
-    const { cols, allowOverlap, preventCollision } = this.props;
     const l = getLayoutItem(layout, i);
     if (!l) return;
-
-    // Create placeholder (display only)
-    const placeholder = {
-      w: l.w,
-      h: l.h,
-      x: l.x,
-      y: l.y,
-      placeholder: true,
-      i: i
-    };
-
-    // Move the element to the dragged location.
 
     // 그룹화 타겟 추적 로직 (마우스 이벤트 기반)
     if (e && node) {
@@ -346,7 +332,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     const l = getLayoutItem(layout, i);
     if (!l) return;
 
-    if (isGroupDroppable && groupingTarget !== undefined) {
+    if (isGroupDroppable && groupingTarget !== null) {
       const draggingTarget: LayoutItem = layout.find((item) => item.i === i);
       const droppingTarget: LayoutItem = layout.find((item) => item.i === groupingTarget);
 
@@ -356,14 +342,15 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           const groupId = `group-${Date.now()}`;
 
           // 기존 아이템들을 레이아웃에서 제거
-          const newLayout = layout.filter((item) => {
+          let newLayout = layout.filter((item) => {
             return (item.i !== draggingTarget.i) && (item.i !== droppingTarget.i);
           });
 
           // 그룹 생성을 위한 더 나은 알고리즘
           const groupLayout = this.createOptimalGroupLayout(draggingTarget, droppingTarget);
 
-          newLayout.push({
+          // 그룹 아이템 생성
+          const groupItem = {
             i: groupId,
             x: groupLayout.groupPosition.x,
             y: groupLayout.groupPosition.y,
@@ -371,7 +358,24 @@ export default class ReactGridLayout extends React.Component<Props, State> {
             h: groupLayout.groupSize.h,
             isGroup: true,
             children: groupLayout.children
-          });
+          };
+
+          // 그룹을 레이아웃에 추가
+          newLayout.push(groupItem);
+
+
+
+            newLayout = moveElement(
+              newLayout,
+              groupLayout,
+              groupLayout.x,  // x는 변경하지 않음
+              groupLayout.y,       // 그룹 아래로 이동
+              true,       // isUserAction
+              false,      // preventCollision
+              "horizontal",
+              cols,
+              allowOverlap,
+            );
 
           layout = newLayout;
         }
@@ -382,22 +386,15 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           
           if (groupIndex !== -1) {
             const updatedGroup = { ...newLayout[groupIndex] };
-            updatedGroup.children = [...updatedGroup.children, {
-              ...draggingTarget,
-              x: 0,
-              y: updatedGroup.children.length
-            }];
             
-            // 그룹 크기 재계산
-            const cols = updatedGroup.children.reduce((maxCols, item) => {
-              return Math.max(maxCols, item.x + item.w);
-            }, 1);
-            const maxHeight = updatedGroup.children.reduce((maxHeight, item) => {
-              return Math.max(maxHeight, item.y + item.h);
-            }, 1);
+            // 기존 그룹 children에 새로운 위젯 추가하여 최적 레이아웃 재계산
+            const allWidgets = [...updatedGroup.children, draggingTarget];
+            const expandedLayout = this.calculateExpandedGroupLayout(allWidgets, updatedGroup);
             
-            updatedGroup.w = Math.max(updatedGroup.w, cols);
-            updatedGroup.h = Math.max(updatedGroup.h, maxHeight);
+            // 그룹 업데이트
+            updatedGroup.children = expandedLayout.children;
+            updatedGroup.w = expandedLayout.w;
+            updatedGroup.h = expandedLayout.h;
             
             newLayout[groupIndex] = updatedGroup;
             layout = newLayout;
@@ -419,7 +416,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         y,
         isUserAction,
         preventCollision,
-        compactType(this.props),
+        compactType(this.props) ?? "horizontal",
         cols,
         allowOverlap
       );
@@ -428,7 +425,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     // Set state
     const newLayout = allowOverlap
       ? layout
-      : compact(layout, compactType(this.props), cols);
+      : compact(layout, compactType(this.props) ?? "horizontal", cols);
 
     this.props.onDragStop(newLayout, oldDragItem, l, null, e, node);
 
@@ -483,7 +480,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     i,
     w,
     h,
-    { e, node, size, handle }
+    { e, node, handle }
   ) => {
     const { oldResizeItem } = this.state;
     const { layout } = this.state;
@@ -1120,22 +1117,21 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
   /**
    * 두 아이템으로부터 최적의 그룹 레이아웃을 생성
+   * 그룹 위치는 타겟 아이템(드롭된 위치)의 위치를 우선으로 함
    */
-  createOptimalGroupLayout(item1: LayoutItem, item2: LayoutItem) {
-    // 그룹의 최소 위치 계산 (두 아이템 중 더 작은 x, y)
-    const groupX = Math.min(item1.x, item2.x);
-    const groupY = Math.min(item1.y, item2.y);
+  createOptimalGroupLayout(draggingItem: LayoutItem, targetItem: LayoutItem) {
+    // 타겟 아이템의 위치를 그룹 위치로 사용 (상호작용 우선권)
+    const groupX = targetItem.x;
+    const groupY = targetItem.y;
 
     // 두 아이템을 효율적으로 배치하는 알고리즘
-    // 가로 배치와 세로 배치 중 더 효율적인 것을 선택
-    const horizontalLayout = this.calculateHorizontalLayout(item1, item2);
-    const verticalLayout = this.calculateVerticalLayout(item1, item2);
+    // 가로 배치를 우선으로 시도 (동일한 열에 배치하기 위해)
+    const horizontalLayout = this.calculateHorizontalLayout(draggingItem, targetItem);
+    const verticalLayout = this.calculateVerticalLayout(draggingItem, targetItem);
 
-    // 면적이 더 작은 레이아웃을 선택
-    const horizontalArea = horizontalLayout.w * horizontalLayout.h;
-    const verticalArea = verticalLayout.w * verticalLayout.h;
-
-    const selectedLayout = horizontalArea <= verticalArea ? horizontalLayout : verticalLayout;
+    // 가로 배치가 그리드 너비를 넘지 않으면 가로 배치 우선
+    const horizontalFitsInGrid = groupX + horizontalLayout.w <= this.props.cols;
+    const selectedLayout = horizontalFitsInGrid ? horizontalLayout : verticalLayout;
 
     return {
       groupPosition: { x: groupX, y: groupY },
@@ -1191,6 +1187,54 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           y: item1.h
         }
       ]
+    };
+  }
+
+  /**
+   * 기존 그룹에 새로운 위젯을 추가할 때 확장된 그룹 레이아웃을 계산
+   * 가로 배치를 우선으로 하되, 그리드 너비를 초과하면 다음 줄로 배치
+   */
+  calculateExpandedGroupLayout(allWidgets: LayoutItem[], existingGroup: LayoutItem) {
+    const maxCols = this.props.cols;
+    const groupStartX = existingGroup.x;
+    
+    // 위젯들을 가로 우선으로 배치
+    let currentX = 0;
+    let currentY = 0;
+    let maxWidth = 0;
+    let maxHeight = 0;
+    
+    const arrangedChildren = allWidgets.map((widget) => {
+      // 현재 위젯이 현재 줄에 들어갈 수 있는지 확인
+      // 그룹의 시작 위치 + 현재 X + 위젯 너비가 전체 컬럼을 넘지 않아야 함
+      const wouldFitInCurrentRow = (groupStartX + currentX + widget.w) <= maxCols;
+      
+      if (!wouldFitInCurrentRow && currentX > 0) {
+        // 다음 줄로 이동
+        currentX = 0;
+        currentY += 2; // 일반적인 위젯 높이를 2로 가정 (또는 이전 줄의 최대 높이 사용)
+      }
+      
+      const arrangedWidget = {
+        ...widget,
+        x: currentX,
+        y: currentY
+      };
+      
+      // 다음 위젯을 위해 X 위치 업데이트
+      currentX += widget.w;
+      
+      // 전체 그룹 크기 추적
+      maxWidth = Math.max(maxWidth, currentX);
+      maxHeight = Math.max(maxHeight, currentY + widget.h);
+      
+      return arrangedWidget;
+    });
+    
+    return {
+      w: maxWidth,
+      h: maxHeight,
+      children: arrangedChildren
     };
   }
 
@@ -1286,12 +1330,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
               return childrenIds.some(childId => this.matchChildWithLayoutItem(child, childId));
             });
             
-            // 디버깅을 위한 로깅
-            console.log(`그룹 ${layoutItem.i}:`, {
-              childrenIds,
-              groupChildrenCount: groupChildren.length,
-              allChildrenKeys: childrenArray.map(c => c.key)
-            });
             
             return this.processGroupItem(layoutItem.i, groupChildren, layoutItem.children);
           } else {

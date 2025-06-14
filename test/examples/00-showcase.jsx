@@ -18,7 +18,8 @@ type State = {|
   compactType: CompactType,
   mounted: boolean,
   resizeHandles: string[],
-  layouts: {[string]: Layout}
+  layouts: {[string]: Layout},
+  preventCollision: boolean,
 |};
 
 const availableHandles = ["s", "w", "e", "n", "sw", "nw", "se", "ne"];
@@ -36,7 +37,8 @@ export default class ShowcaseLayout extends React.Component<Props, State> {
     compactType: "vertical",
     resizeHandles: ['se'],
     mounted: false,
-    layouts: { lg: generateLayout(['se']) }
+    layouts: { lg: generateLayout(['se']) },
+    preventCollision: false,
   };
 
   componentDidMount() {
@@ -99,6 +101,12 @@ export default class ShowcaseLayout extends React.Component<Props, State> {
     alert(`Element parameters: ${JSON.stringify(elemParams)}`);
   };
 
+  onCollisionChange: EventHandler = () => {
+    this.setState({
+      preventCollision: !this.state.preventCollision,
+    })
+  }
+
   render(): React.Node {
     // eslint-disable-next-line no-unused-vars
     return (
@@ -118,6 +126,9 @@ export default class ShowcaseLayout extends React.Component<Props, State> {
         <button onClick={this.onResizeTypeChange}>
           Resize {this.state.resizeHandles === availableHandles ? "One Corner" : "All Corners"}
         </button>
+        <button onClick={this.onCollisionChange}>
+          Prevent Collision: {this.state.preventCollision ? "True" : "False"}
+        </button>
         <ResponsiveReactGridLayout
           {...this.props}
           layouts={this.state.layouts}
@@ -130,7 +141,7 @@ export default class ShowcaseLayout extends React.Component<Props, State> {
           // and set `measureBeforeMount={true}`.
           useCSSTransforms={this.state.mounted}
           compactType={this.state.compactType}
-          preventCollision={!this.state.compactType}
+          preventCollision={this.state.preventCollision}
         >
           {this.generateDOM()}
         </ResponsiveReactGridLayout>
