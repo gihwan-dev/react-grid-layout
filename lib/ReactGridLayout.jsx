@@ -1195,23 +1195,35 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   }
 
   processGroupItem(key: string, children: ReactElement<any>[], layout: LayoutChild[]) {
-    // 그룹 내부 레이아웃의 최대 너비 계산
-    const cols = layout.reduce((maxCols, item) => {
+    // 그룹 내부 레이아웃의 최대 너비 계산 (두 위젯이 나란히 배치될 수 있도록)
+    const groupCols = layout.reduce((maxCols, item) => {
       return Math.max(maxCols, item.x + item.w);
-    }, 2);
+    }, 1);
+    
+    // 그룹 내부 그리드의 너비를 실제 필요한 만큼 계산
+    const groupWidth = this.props.width * (groupCols / this.props.cols);
 
     // 그룹 컨테이너를 위한 child 생성
     const groupChild = (
       <div
         key={key}
+        className="react-grid-group-container"
+        style={{
+          width: "100%",
+          height: "100%",
+          overflow: "auto",
+        }}
        >
-        <ReactGridLayout 
+        <ReactGridLayout
+          style={{
+            margin: 0,
+          }}
           layout={layout} 
-          cols={cols + 1}
-          width={this.props.width / this.props.cols * cols}
+          cols={groupCols}
+          width={groupWidth}
           rowHeight={this.props.rowHeight || 150}
           margin={[0, 0]}
-          containerPadding={[10, 10]}
+          containerPadding={[0, 0]}
           isDraggable={true}
           isResizable={true}
           autoSize={true}
@@ -1227,7 +1239,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
             ) : (
               <div key={item.i} style={{ 
                 background: "#f0f0f0", 
-                border: "1px dashed #ccc",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

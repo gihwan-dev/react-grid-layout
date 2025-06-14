@@ -117,3 +117,33 @@
   bottom: 0;
   transform: rotate(45deg);
 }
+
+/* 오버레이 스크롤바 스타일 */
+.react-grid-group-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
+}
+
+.react-grid-group-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.react-grid-group-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.react-grid-group-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.react-grid-group-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.react-grid-group-container::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
