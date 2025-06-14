@@ -916,33 +916,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   };
 
   /**
-   * 주어진 위치에서 겹치는 아이템을 찾음 (드래그된 아이템 제외)
-   */
-  findItemAtPosition = (draggedItem: LayoutItem, x: number, y: number) => {
-    const { layout } = this.state;
-
-    // 드래그된 아이템의 새로운 위치를 임시로 설정
-    const tempDraggedItem = {
-      ...draggedItem,
-      x: x,
-      y: y
-    };
-
-    // 다른 모든 아이템과 충돌 검사
-    for (const item of layout) {
-      if (item.i === draggedItem.i) continue; // 자기 자신 제외
-      if (item.static) continue; // 정적 아이템 제외
-
-      // 충돌 검사
-      if (this.isItemsOverlapping(tempDraggedItem, item)) {
-        return item;
-      }
-    }
-
-    return null;
-  };
-
-  /**
    * 마우스 포인터 위치를 기반으로 해당 위치의 아이템을 찾음 (하이브리드 접근법)
    */
   findItemAtMousePosition = (
