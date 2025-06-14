@@ -32,7 +32,7 @@ import {
 } from "./utils";
 
 import type { PositionParams } from "./calculateUtils";
-import { calcXY } from "./calculateUtils";
+import { calcXY, calcGridItemPosition } from "./calculateUtils";
 
 import GridItem from "./GridItem";
 import type { DefaultProps, Props } from "./ReactGridLayoutPropTypes";
@@ -317,8 +317,10 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
     // Move the element to the dragged location.
 
-    // 그룹화 타겟 추적 로직
-    this.handleGroupingTarget(i, x, y);
+    // 그룹화 타겟 추적 로직 (마우스 이벤트 기반)
+    if (e && node) {
+      this.handleGroupingTarget(i, e, node);
+    }
   };
 
   /**
@@ -923,13 +925,13 @@ export default class ReactGridLayout extends React.Component<Props, State> {
   /**
    * 드래그 중인 아이템이 어떤 다른 아이템 위에 있는지 감지하고 그룹화 타겟을 추적
    */
-  handleGroupingTarget = (draggedItemId: string, x: number, y: number) => {
+  handleGroupingTarget = (draggedItemId: string, mouseEvent: MouseEvent, node: HTMLElement) => {
     const { layout } = this.state;
     const draggedItem = getLayoutItem(layout, draggedItemId);
     if (!draggedItem) return;
 
-    // 현재 드래그된 위치에서 겹치는 다른 아이템 찾기
-    const targetItem = this.findItemAtPosition(draggedItem, x, y);
+    // 마우스 포인터 위치에서 겹치는 다른 아이템 찾기
+    const targetItem = this.findItemAtMousePosition(mouseEvent, draggedItem, node);
     const newTargetId = targetItem ? targetItem.i : null;
     const currentTargetId = this.state.groupingTarget;
 
@@ -997,6 +999,80 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       }
     }
 
+    return null;
+  };
+
+  /**
+   * 마우스 포인터 위치를 기반으로 해당 위치의 아이템을 찾음 (하이브리드 접근법)
+   */
+  findItemAtMousePosition = (mouseEvent: MouseEvent, draggedItem: LayoutItem, node: HTMLElement) => {
+    const { layout } = this.state;
+    
+    // 그리드 컨테이너 찾기 (.react-grid-layout 클래스를 가진 요소)
+    const gridContainer = node.closest('.react-grid-layout');
+    if (!gridContainer) return null;
+    
+    const gridRect = gridContainer.getBoundingClientRect();
+    const mouseX = mouseEvent.clientX - gridRect.left;
+    const mouseY = mouseEvent.clientY - gridRect.top;
+    
+    // 1단계: 마우스 위치를 그리드 좌표로 변환하여 대략적인 후보 찾기
+    const { cols, margin, maxRows, rowHeight, width, containerPadding } = this.props;
+    const positionParams: PositionParams = {
+      cols,
+      margin,
+      maxRows,
+      rowHeight,
+      containerWidth: width,
+      containerPadding: containerPadding || margin
+    };
+    
+    const gridPos = calcXY(
+      positionParams,
+      mouseY,
+      mouseX,
+      1,
+      1
+    );
+    
+    const candidates = [];
+    for (const item of layout) {
+      if (item.i === draggedItem.i) continue; // 드래그 중인 아이템 제외
+      if (item.static) continue; // 정적 아이템 제외
+      
+      // 그리드 좌표 기반 충돌 확인 (여유 마진 포함)
+      if (!(
+        gridPos.x > item.x + item.w ||
+        item.x > gridPos.x + 1 ||
+        gridPos.y > item.y + item.h ||
+        item.y > gridPos.y + 1
+      )) {
+        candidates.push(item);
+      }
+    }
+    
+    // 2단계: 픽셀 단위로 정확한 충돌 감지
+    for (const candidate of candidates) {
+      const pixelPos = calcGridItemPosition(
+        positionParams,
+        candidate.x,
+        candidate.y,
+        candidate.w,
+        candidate.h,
+        this.state
+      );
+      
+      // 마우스가 아이템의 픽셀 경계 내에 있는지 확인
+      if (
+        mouseX >= pixelPos.left &&
+        mouseX <= pixelPos.left + pixelPos.width &&
+        mouseY >= pixelPos.top &&
+        mouseY <= pixelPos.top + pixelPos.height
+      ) {
+        return candidate;
+      }
+    }
+    
     return null;
   };
 
