@@ -1,10 +1,11 @@
 // @flow
 import * as React from "react";
 import _ from "lodash";
-import Responsive from '../../lib/ResponsiveReactGridLayout';
-import WidthProvider from '../../lib/components/WidthProvider';
-import type {CompactType, Layout, LayoutItem, ReactChildren} from '../../lib/utils';
-import type {Breakpoint, OnLayoutChangeCallback} from '../../lib/responsiveUtils';
+import Responsive from "../../lib/ResponsiveReactGridLayout";
+import WidthProvider from "../../lib/components/WidthProvider";
+import type { CompactType, Layout, LayoutItem, ReactChildren } from "../../lib/utils";
+import type { Breakpoint, OnLayoutChangeCallback } from "../../lib/responsiveUtils";
+
 const ResponsiveReactGridLayout = WidthProvider(Responsive);
 
 type Props = {|
@@ -12,6 +13,7 @@ type Props = {|
   cols: {[string]: number},
   onLayoutChange: Function,
   rowHeight: number,
+  draggableHandle: string,
 |};
 type State = {|
   currentBreakpoint: string,
@@ -48,7 +50,19 @@ export default class ShowcaseLayout extends React.Component<Props, State> {
   generateDOM(): ReactChildren {
     return _.map(this.state.layouts.lg, function(l, i) {
       return (
-        <div key={i} className={l.static ? "static" : ""}>
+        <div style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }} key={i} className={l.static ? "static" : ""}>
+          <button style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 9999,
+          }} className="drag-handle">핸들</button>
           {l.static ? (
             <span
               className="text"

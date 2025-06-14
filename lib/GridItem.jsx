@@ -1,9 +1,18 @@
 // @flow
+import type { Element as ReactElement, Node as ReactNode } from "react";
 import React from "react";
 import { flushSync } from "react-dom";
 import PropTypes from "prop-types";
 import { DraggableCore } from "react-draggable";
 import { Resizable } from "react-resizable";
+import type {
+  DroppingPosition,
+  GridDragEvent,
+  GridResizeEvent,
+  Position,
+  ReactDraggableCallbackData,
+  ResizeHandleAxis
+} from "./utils";
 import {
   fastPositionEqual,
   perc,
@@ -11,32 +20,21 @@ import {
   setTopLeft,
   setTransform
 } from "./utils";
+import type { PositionParams } from "./calculateUtils";
 import {
+  calcGridColWidth,
   calcGridItemPosition,
   calcGridItemWHPx,
-  calcGridColWidth,
-  calcXY,
   calcWH,
+  calcXY,
   clamp
 } from "./calculateUtils";
+import type { ReactRef, ResizeHandle } from "./ReactGridLayoutPropTypes";
 import {
   resizeHandleAxesType,
   resizeHandleType
 } from "./ReactGridLayoutPropTypes";
 import clsx from "clsx";
-import type { Element as ReactElement, Node as ReactNode } from "react";
-
-import type {
-  ReactDraggableCallbackData,
-  GridDragEvent,
-  GridResizeEvent,
-  DroppingPosition,
-  Position,
-  ResizeHandleAxis
-} from "./utils";
-
-import type { PositionParams } from "./calculateUtils";
-import type { ResizeHandle, ReactRef } from "./ReactGridLayoutPropTypes";
 
 type PartialPosition = { top: number, left: number };
 type GridItemCallback<Data: GridDragEvent | GridResizeEvent> = (

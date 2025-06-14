@@ -624,7 +624,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
       isBounded,
       useCSSTransforms,
       transformScale,
-      draggableCancel,
+      isGroup,
       draggableHandle,
       resizeHandles,
       resizeHandle
@@ -660,7 +660,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         containerPadding={containerPadding || margin}
         maxRows={maxRows}
         rowHeight={rowHeight}
-        cancel={draggableCancel}
+        cancel={isGroup ? null : ".non-draggable"}
         handle={draggableHandle}
         onDragStop={this.onDragStop}
         onDragStart={this.onDragStart}
@@ -687,9 +687,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
         droppingPosition={isDroppingItem ? droppingPosition : undefined}
         resizeHandles={resizeHandlesOptions}
         resizeHandle={resizeHandle}
-        style={{
-          position: "relative"
-        }}
       >
         <div style={{ position: "relative" }}>
           {isGroupingTarget && isGroupDroppable && (
@@ -1300,9 +1297,10 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           width: "100%",
           height: "100%",
           overflowX: "hidden",
-          overflowY: "overlay"
+          overflowY: "auto"
         }}
       >
+        <button className="drag-handle">핸들</button>
         <ReactGridLayout
           layout={layout}
           cols={groupCols}
@@ -1313,6 +1311,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
           isDraggable={true}
           isResizable={true}
           autoSize={true}
+          isGroup={true}
         >
           {layout.map(item => {
             const targetElement = children.find(element =>
@@ -1321,6 +1320,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
             return targetElement ? (
               <div
                 key={item.i}
+                className="non-draggable"
                 style={{ width: "100%", height: "100%", overflow: "hidden" }}
               >
                 {targetElement}
